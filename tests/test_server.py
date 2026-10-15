@@ -83,3 +83,34 @@ class BridgeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class ClassicProtocolTests(unittest.TestCase):
+    def test_roll_packet_checksum(self):
+        from legacy_serial import packet
+        frame = packet(0x02, 0x30, 1, [100, 0, 90, 1])
+        self.assertEqual(frame[:6], bytes.fromhex('ff fe 02 30 01 05'))
+        self.assertEqual(frame[6:10], bytes([100, 0, 90, 1]))
+        self.assertEqual(sum(frame[2:]) & 0xff, 0xff)
+
+    def test_serial_drive_led_and_stop(self):
+        from legacy_serial import LegacySphero
+        class FakeSerial:
+            def __init__(self, **kwargs):
+                self.messages = []
+                self.closed = False
+            def write(self, data):
+                self.messages.append(data)
+                return len(data)
+            def close(self):
+                self.closed = True
+        bot = LegacySphero('/dev/cu.Sphero-Test', serial_factory=FakeSerial)
+        bot.set_heading(270)
+        bot.set_speed(40)
+        self.assertEqual(bot.conn.messages[-1][6:10], bytes([40, 1, 14, 1]))
+        from types import SimpleNamespace
+        bot.set_main_led(SimpleNamespace(r=2, g=3, b=4))
+        self.assertEqual(bot.conn.messages[-1][3], 0x20)
+        self.assertEqual(bot.conn.messages[-1][6:10], bytes([2, 3, 4, 0]))
+        bot.close()
+        self.assertEqual(bot.conn.messages[-1][6:10], bytes([0, 1, 14, 0]))
+        self.assertTrue(bot.conn.closed)
