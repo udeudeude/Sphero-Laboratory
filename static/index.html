@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101a27"><title>Sphero Laboratory</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,-apple-system,sans-serif;background:#101a27;color:#edf4fa}*{box-sizing:border-box}body{max-width:780px;margin:auto;padding:16px 16px calc(30px + env(safe-area-inset-bottom))}
+h1{font-size:1.65rem;margin:.2rem 0}.sub,.hint,.foot{color:#9eb1c5}.panel{background:#1b2b3d;border:1px solid #34495f;border-radius:16px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.grid .panel{margin:0}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0}.row>*{flex:1}button,select,input{font:inherit}button,select{background:#30475e;color:white;border:1px solid #526e89;border-radius:10px;padding:11px;min-height:44px;cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visible,#pad:focus-visible{outline:3px solid #8ee0e5;outline-offset:2px}button.primary{background:#236f85}button.danger{background:#a03447;font-weight:800;border-color:#e05b6b}button:disabled{opacity:.45;cursor:default}select{width:100%;font-size:.92rem}label{display:block;margin:10px 0 6px}input[type=range]{width:100%;accent-color:#71d6dc}.hint{font-size:.85rem;line-height:1.45}.status{font-size:.84rem;color:#c6d2dc}.ok{color:#7cdeb1}.bad{color:#ff909d}.name{min-height:2.5em;margin:.4em 0;color:#c6d2dc;overflow-wrap:anywhere}
+#pad{width:min(100%,315px);aspect-ratio:1;border-radius:50%;margin:14px auto;touch-action:none;background:radial-gradient(circle,#22394b 0 9%,#243f52 10% 36%,#335469 37% 38%,#203649 39% 68%,#47667a 69% 70%,#1c3041 71%);position:relative;border:1px solid #57768d;display:grid;place-items:center;user-select:none;cursor:crosshair}
+#pad::before{content:'↑ FRONT';position:absolute;top:9%;font-size:.7rem;letter-spacing:.09em;color:#adcbdb}#dot{width:38px;height:38px;border-radius:50%;background:#7ddbe9;box-shadow:0 0 20px #74d6e566;position:absolute;pointer-events:none}#stop{width:100%;min-height:58px;font-size:1.15rem}#log{font-size:.8rem;white-space:pre-wrap;max-height:195px;overflow:auto;color:#aec1d2;line-height:1.4}.foot{font-size:.8rem;line-height:1.5}.calibration{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+@media(max-width:440px){body{padding:12px 10px 25px}.panel{padding:12px}.grid{gap:7px}.grid .panel{padding:10px}button,select{font-size:.86rem;padding:8px}h1{font-size:1.45rem}}
+</style></head><body>
+<header><small style="color:#81cdd6;letter-spacing:.1em">BLUETOOTH BRIDGE · macOS</small><h1>◉ Sphero Laboratory</h1><p class="sub">One controller. Two rolling robots.</p><span class="status" id="bridge" role="status">Connecting to Mac…</span> <span class="status" id="deadman"></span></header>
+<section class="panel"><div class="row"><button class="primary" id="scan">Scan for robots</button><button id="demo">Demo instructions</button></div>
+<div class="grid"><section class="panel"><strong>A · Sphero 2.0</strong><p class="name" id="status-a">Disconnected</p><label for="select-a">Discovered device</label><select id="select-a"><option>Scan first</option></select><div class="row"><button id="connect-a">Connect A</button><button id="disconnect-a">Disconnect A</button></div></section><section class="panel"><strong>B · SPRK+</strong><p class="name" id="status-b">Disconnected</p><label for="select-b">Discovered device</label><select id="select-b"><option>Scan first</option></select><div class="row"><button id="connect-b">Connect B</button><button id="disconnect-b">Disconnect B</button></div></section></div></section>
+<section class="panel"><label for="pattern">Drive mode</label><select id="pattern"><option value="sync">Synchronized</option><option value="mirror">Mirror (opposite directions)</option><option value="a">A only</option><option value="b">B only</option></select><div id="pad" tabindex="0" role="application" aria-label="Joystick: drag or use arrow keys; release to stop"><div id="dot"></div></div><p class="hint" style="text-align:center">Drag to drive · Release to stop · Arrow keys on desktop</p><label for="speed">Maximum speed · <span id="speedvalue">25%</span></label><input id="speed" type="range" min="0" max="100" value="25"><button id="stop" class="danger">■ STOP BOTH</button><p class="hint">Mac-side motion watchdog: 0.75 seconds. Bluetooth failures can still prevent stopping.</p></section>
+<section class="panel"><strong>Heading offsets</strong><p class="hint">Adjust each robot's forward heading independently.</p><div class="calibration"><div><label for="offset-a">A · <span id="offset-a-value">0°</span></label><input type="range" id="offset-a" min="0" max="359"></div><div><label for="offset-b">B · <span id="offset-b-value">0°</span></label><input type="range" id="offset-b" min="0" max="359"></div></div></section>
+<section class="panel"><strong>Lights</strong><div class="row"><button data-color="255,50,60">Red</button><button data-color="45,230,125">Green</button><button data-color="70,130,255">Blue</button><button data-color="255,255,255">White</button><button data-color="0,0,0">Off</button></div></section>
+<section class="panel"><div class="row"><strong>Diagnostics</strong><button id="clear-log">Clear</button></div><pre id="log" aria-live="polite">Ready.</pre></section>
+<p class="foot">Experimental hardware support. Sphero 2.0 uses Bluetooth Classic and may not appear in this BLE scan. Keep robots on the floor and away from stairs. Close Sphero Play/Edu first. Use only on trusted Wi-Fi.</p>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+function log(m){$('log').textContent=(new Date().toLocaleTimeString()+' '+m+'\n'+$('log').textContent).slice(0,2600)}
+const query=new URLSearchParams(location.search),suppliedToken=query.get('token');
+if(suppliedToken){sessionStorage.setItem('sphero-token',suppliedToken);history.replaceState(null,'',location.pathname)}
+const token=sessionStorage.getItem('sphero-token')||'';
+const headers={'Content-Type':'application/json','X-Sphero-Token':token};
+let detected=[],active=false,drivePending=false,target=null,stoppedByError=false;
+async function request(method,endpoint,data){
+ const options={method,headers,cache:'no-store'};
+ if(method==='POST')options.body=JSON.stringify(data||{});
+ const r=await fetch('/api/'+endpoint,options);
+ let body;try{body=await r.json()}catch{throw Error('Bridge returned HTTP '+r.status)}
+ if(!r.ok)throw Error(body.error||'HTTP '+r.status);
+ return method==='POST'?body.result:body;
+}
+const post=(path,data)=>request('POST',path,data);
+async function refresh(){
+ try{
+ const s=await request('GET','status');
+ $('bridge').textContent='Bridge online · '+s.mode;
+ $('bridge').className='status ok';
+ $('deadman').textContent=' · watchdog '+s.watchdogSeconds+'s';
+ for(const slot of ['a','b']){
+ $('status-'+slot).textContent=s.robots[slot]?.name||'Disconnected';
+ $('status-'+slot).className='name '+(s.robots[slot]?'ok':'');
+ }
+ if(s.lastError&&s.lastError!==refresh.lastError){log('Bridge: '+s.lastError);refresh.lastError=s.lastError}
+ }catch(e){$('bridge').textContent='Bridge offline · '+e.message;$('bridge').className='status bad'}
+}
+function populate(){
+ for(const slot of ['a','b']){
+ const sel=$('select-'+slot);sel.replaceChildren();
+ if(!detected.length){sel.add(new Option('No devices found',''));continue}
+ detected.forEach(d=>sel.add(new Option(d.name+' ('+d.type+')',d.id)));
+ const choice=detected.find(d=>slot==='b'?/sprk|sk-/i.test(d.name):/sphero|sph-/i.test(d.name));
+ if(choice)sel.value=choice.id;else if(slot==='b'&&detected[1])sel.selectedIndex=1;
+ }
+}
+$('scan').onclick=async()=>{
+ $('scan').disabled=true;log('Scanning for BLE robots…');
+ try{detected=await post('scan');populate();log('Found '+detected.length+' candidate(s); Bluetooth Classic Sphero 2.0 may be absent')}
+ catch(e){log('Scan failed: '+e.message)}
+ finally{$('scan').disabled=false;refresh()}
+};
+for(const slot of ['a','b']){
+ $('connect-'+slot).onclick=async()=>{
+ const id=$('select-'+slot).value;if(!id)return log('Scan and select a device first');
+ $('connect-'+slot).disabled=true;
+ try{const r=await post('connect',{slot,id});log('Connected '+slot.toUpperCase()+': '+r.name)}
+ catch(e){log('Connect '+slot.toUpperCase()+' failed: '+e.message)}
+ finally{$('connect-'+slot).disabled=false;refresh()}
+ };
+ $('disconnect-'+slot).onclick=async()=>{
+ stop();try{await post('disconnect',{slot});log('Disconnected '+slot.toUpperCase())}
+ catch(e){log('Disconnect: '+e.message)}refresh();
+ };
+}
+$('demo').onclick=()=>alert('For demo mode stop the bridge and run: SPHERO_DEMO=1 .venv/bin/python server.py');
+$('clear-log').onclick=()=>{$('log').textContent='Log cleared.'};
+$('speed').oninput=()=>{$('speedvalue').textContent=$('speed').value+'%'};
+for(const slot of ['a','b']){
+ const input=$('offset-'+slot);input.value=localStorage.getItem('sphero-offset-'+slot)||'0';
+ const update=()=>{$('offset-'+slot+'-value').textContent=input.value+'°';localStorage.setItem('sphero-offset-'+slot,input.value)};
+ input.oninput=update;update();
+}
+function slots(){const p=$('pattern').value;return p==='a'?['a']:p==='b'?['b']:['a','b']}
+function computeTargets(x,y){
+ const amount=Math.min(1,Math.hypot(x,y)),h=(Math.atan2(x,-y)*180/Math.PI+360)%360;
+ const speed=Math.round(amount*Number($('speed').value)),targets={};
+ for(const slot of slots()){
+ const mirror=slot==='b'&&$('pattern').value==='mirror'?180:0,offset=Number($('offset-'+slot).value);
+ targets[slot]={heading:Math.floor((h+mirror+offset)%360),speed};
+ }
+ return targets;
+}
+async function sendDrive(){
+ if(!active||!target||drivePending)return;
+ drivePending=true;const targets=computeTargets(target.x,target.y);
+ try{
+ const r=await post('command',{action:'drive',slots:Object.keys(targets),targets});
+ const errors=Object.entries(r).filter(([,v])=>v!=='ok');
+ if(errors.length){if(!stoppedByError)log('Drive: '+JSON.stringify(errors));stoppedByError=true}else stoppedByError=false;
+ }catch(e){if(!stoppedByError)log('Drive failed: '+e.message);stoppedByError=true}
+ finally{drivePending=false}
+}
+const pad=$('pad'),dot=$('dot');
+function move(e){
+ const r=pad.getBoundingClientRect(),radius=r.width*.39;
+ const dx=e.clientX-r.left-r.width/2,dy=e.clientY-r.top-r.height/2;
+ const factor=Math.max(1,Math.hypot(dx,dy)/radius);
+ const x=dx/factor/radius,y=dy/factor/radius;
+ target={x,y};dot.style.transform='translate('+x*radius+'px,'+y*radius+'px)';sendDrive();
+}
+async function stop(){
+ active=false;target=null;dot.style.transform='';
+ try{
+ await post('command',{action:'stop',slots:['a','b']});
+ while(drivePending)await new Promise(resolve=>setTimeout(resolve,25));
+ await post('command',{action:'stop',slots:['a','b']});
+ }catch(e){log('STOP delivery failed: '+e.message)}
+}
+pad.addEventListener('pointerdown',e=>{if(e.button!==0)return;active=true;pad.setPointerCapture(e.pointerId);move(e)});
+pad.addEventListener('pointermove',e=>{if(active)move(e)});
+for(const ev of ['pointerup','pointercancel','lostpointercapture'])pad.addEventListener(ev,()=>{if(active)stop()});
+pad.addEventListener('keydown',e=>{
+ const dirs={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
+ if(!dirs[e.key])return;e.preventDefault();active=true;target={x:dirs[e.key][0],y:dirs[e.key][1]};
+ dot.style.transform='translate('+target.x*90+'px,'+target.y*90+'px)';sendDrive();
+});
+pad.addEventListener('keyup',e=>{if(e.key.startsWith('Arrow')){e.preventDefault();stop()}});
+$('stop').onclick=stop;
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});
+window.addEventListener('pagehide',()=>{active=false;target=null;post('command',{action:'stop',slots:['a','b']}).catch(()=>{})});
+window.addEventListener('blur',()=>{if(active)stop()});
+setInterval(sendDrive,160);
+for(const b of document.querySelectorAll('[data-color]'))b.onclick=async()=>{
+ try{const r=await post('command',{action:'color',slots:['a','b'],color:b.dataset.color.split(',').map(Number)});log('Lights: '+JSON.stringify(r))}
+ catch(e){log('Lights failed: '+e.message)}
+};
+refresh();setInterval(refresh,4000);
+</script></body></html>
