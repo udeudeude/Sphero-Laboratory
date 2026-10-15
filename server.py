@@ -14,6 +14,7 @@ import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+from legacy_serial import classic_ports, LegacySphero
 
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get('PORT', '8765'))
@@ -50,14 +51,25 @@ class Bridge:
                      ('demo-sprk', 'Demo SPRK+', 'Demo')]
             toys = {key: None for key, _, _ in found}
         else:
-            from spherov2 import scanner
-            discovered = scanner.find_toys(timeout=8)
             found, toys = [], {}
+            # Sphero 2.0 uses Bluetooth Classic, often exposed as a serial
+            # device on older macOS setups. It cannot appear in a BLE scan.
+            for path in classic_ports():
+                key = 'classic:' + path
+                toys[key] = path
+                found.append((key, 'Sphero 2.0 · ' + Path(path).name, 'Classic RFCOMM (experimental)'))
+            try:
+                from spherov2 import scanner
+                discovered = scanner.find_toys(timeout=8)
+            except Exception as exc:
+                if not found:
+                    raise RuntimeError('BLE scan failed; no Classic ports found: ' + str(exc)) from exc
+                self.last_error = 'BLE scan failed: ' + str(exc)
+                discovered = []
             for toy in discovered:
-                # A name/address-derived key stays associated with this specific scan object.
                 name = str(getattr(toy, 'name', type(toy).__name__))
                 address = str(getattr(toy, 'address', '') or getattr(toy, 'identifier', ''))
-                key = f'{name}|{address}'
+                key = f'ble:{name}|{address}'
                 if key in toys:
                     key = f'{key}|{len(found)}'
                 toys[key] = toy
@@ -82,10 +94,14 @@ class Bridge:
             if self.demo:
                 self.robots[slot] = {'name': label, 'id': key}
             else:
-                from spherov2.sphero_edu import SpheroEduAPI
-                ctx = SpheroEduAPI(self.found[key])
-                api = ctx.__enter__()
-                self.robots[slot] = {'name': label, 'id': key, 'ctx': ctx, 'api': api}
+                if key.startswith('classic:'):
+                    api = LegacySphero(self.found[key])
+                    self.robots[slot] = {'name': label, 'id': key, 'ctx': None, 'api': api}
+                else:
+                    from spherov2.sphero_edu import SpheroEduAPI
+                    ctx = SpheroEduAPI(self.found[key])
+                    api = ctx.__enter__()
+                    self.robots[slot] = {'name': label, 'id': key, 'ctx': ctx, 'api': api}
                 try:
                     api.set_speed(0)
                 except Exception:
@@ -101,7 +117,10 @@ class Bridge:
                 try:
                     obj['api'].set_speed(0)
                 finally:
-                    obj['ctx'].__exit__(None, None, None)
+                    if obj['ctx'] is None:
+                        obj['api'].close()
+                    else:
+                        obj['ctx'].__exit__(None, None, None)
 
     def _stop(self, slot):
         obj = self.robots.get(slot)
