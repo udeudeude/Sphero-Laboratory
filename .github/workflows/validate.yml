@@ -1,0 +1,25 @@
+name: Validate prototype
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python unit tests and syntax
+        run: |
+          python -m unittest discover -s tests -v
+          python -m py_compile server.py
+          bash -n START.command
+      - name: JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('static/index.html').read_text()
+          Path('/tmp/sphero-ui.js').write_text(html.split('<script>')[1].split('</script>')[0])
+          PY
+          node --check /tmp/sphero-ui.js
