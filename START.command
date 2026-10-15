@@ -10,7 +10,7 @@ if [ ! -d .venv ]; then
   echo 'Creating isolated Python environment…'
   python3 -m venv .venv
 fi
-if ! .venv/bin/python -c 'import spherov2; import bleak' >/dev/null 2>&1; then
+if ! .venv/bin/python -c 'import spherov2; import bleak; import serial' >/dev/null 2>&1; then
   echo 'Installing Bluetooth dependencies…'
   .venv/bin/python -m pip install -r requirements.txt
 fi
