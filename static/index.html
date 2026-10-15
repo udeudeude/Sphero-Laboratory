@@ -15,7 +15,7 @@ h1{font-size:1.65rem;margin:.2rem 0}.sub,.hint,.foot{color:#9eb1c5}.panel{backgr
 <section class="panel"><strong>Heading offsets</strong><p class="hint">Adjust each robot's forward heading independently.</p><div class="calibration"><div><label for="offset-a">A · <span id="offset-a-value">0°</span></label><input type="range" id="offset-a" min="0" max="359"></div><div><label for="offset-b">B · <span id="offset-b-value">0°</span></label><input type="range" id="offset-b" min="0" max="359"></div></div></section>
 <section class="panel"><strong>Lights</strong><div class="row"><button data-color="255,50,60">Red</button><button data-color="45,230,125">Green</button><button data-color="70,130,255">Blue</button><button data-color="255,255,255">White</button><button data-color="0,0,0">Off</button></div></section>
 <section class="panel"><div class="row"><strong>Diagnostics</strong><button id="clear-log">Clear</button></div><pre id="log" aria-live="polite">Ready.</pre></section>
-<p class="foot">Experimental hardware support. Sphero 2.0 uses Bluetooth Classic and may not appear in this BLE scan. Keep robots on the floor and away from stairs. Close Sphero Play/Edu first. Use only on trusted Wi-Fi.</p>
+<p class="foot">Experimental hardware support. Sphero 2.0 uses Bluetooth Classic; on macOS it needs a paired Sphero serial port (experimental). Keep robots on the floor and away from stairs. Close Sphero Play/Edu first. Use only on trusted Wi-Fi.</p>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -58,7 +58,7 @@ function populate(){
 }
 $('scan').onclick=async()=>{
  $('scan').disabled=true;log('Scanning for BLE robots…');
- try{detected=await post('scan');populate();log('Found '+detected.length+' candidate(s); Bluetooth Classic Sphero 2.0 may be absent')}
+ try{detected=await post('scan');populate();log('Found '+detected.length+' candidate(s); Sphero 2.0 requires a Classic serial port')}
  catch(e){log('Scan failed: '+e.message)}
  finally{$('scan').disabled=false;refresh()}
 };
