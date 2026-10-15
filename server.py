@@ -78,7 +78,6 @@ class Bridge:
             self.found = toys
             self.labels = [{'id': key, 'name': name, 'type': kind}
                            for key, name, kind in found]
-            self.last_error = None
             return list(self.labels)
 
     def connect(self, slot, key):
